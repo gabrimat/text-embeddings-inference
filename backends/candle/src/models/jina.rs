@@ -436,6 +436,9 @@ impl JinaBertModel {
                 }
                 (pool, None)
             }
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for JinaBert yet")
+            }
         };
 
         let (embeddings, encoder) = match (

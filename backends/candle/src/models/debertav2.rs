@@ -1095,6 +1095,9 @@ impl DebertaV2Model {
                 (Some(classifier), None)
             }
             ModelType::Embedding(pool) => (None, Some(pool)),
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for DebertaV2 yet")
+            }
         };
 
         let embeddings = match DebertaV2Embeddings::load(vb.pp("embeddings"), config) {

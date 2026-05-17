@@ -3,11 +3,11 @@ use crate::http::types::{
     DecodeRequest, DecodeResponse, EmbedAllRequest, EmbedAllResponse, EmbedRequest, EmbedResponse,
     EmbedSparseRequest, EmbedSparseResponse, Embedding, EncodingFormat, Input, InputIds, InputType,
     OpenAICompatEmbedding, OpenAICompatErrorResponse, OpenAICompatRequest, OpenAICompatResponse,
-    OpenAICompatUsage, PredictInput, PredictRequest, PredictResponse, Prediction, Rank,
-    RerankRequest, RerankResponse, Sequence, SimilarityInput, SimilarityParameters,
-    SimilarityRequest, SimilarityResponse, SimpleToken, SparseValue, TokenizeInput,
-    TokenizeRequest, TokenizeResponse, TruncationDirection, VertexPrediction, VertexRequest,
-    VertexResponse,
+    OpenAICompatUsage, PredictInput, PredictRequest, PredictResponse, PredictTokensResponse,
+    Prediction, Rank, RerankRequest, RerankResponse, Sequence, SimilarityInput,
+    SimilarityParameters, SimilarityRequest, SimilarityResponse, SimpleToken, SparseValue,
+    TokenizeInput, TokenizeRequest, TokenizeResponse, TruncationDirection, VertexPrediction,
+    VertexRequest, VertexResponse,
 };
 use crate::{
     logging, shutdown, ClassifierModel, EmbeddingModel, ErrorResponse, ErrorType, Info, ModelType,
@@ -279,6 +279,42 @@ async fn predict(
     Ok((headers, Json(response)))
 }
 
+/// Get all token predictions without pooling
+/// Returns a 424 status code if the model is not a token classifier model.
+#[utoipa::path(
+post,
+tag = "Text Embeddings Inference",
+path = "/predict_tokens",
+request_body = PredictTokensRequest,
+responses(
+(status = 200, description = "Predictions", body = PredictTokensResponse),
+(status = 424, description = "Prediction Error", body = ErrorResponse,
+example = json ! ({"error": "Inference failed", "error_type": "backend"})),
+(status = 429, description = "Model is overloaded", body = ErrorResponse,
+example = json ! ({"error": "Model is overloaded", "error_type": "overloaded"})),
+(status = 422, description = "Tokenization error", body = ErrorResponse,
+example = json ! ({"error": "Tokenization error", "error_type": "tokenizer"})),
+(status = 400, description = "Batch is empty", body = ErrorResponse,
+example = json ! ({"error": "Batch is empty", "error_type": "empty"})),
+(status = 413, description = "Batch size error", body = ErrorResponse,
+example = json ! ({"error": "Batch size error", "error_type": "validation"})),
+)
+)]
+#[instrument(
+    skip_all,
+    fields(total_time, tokenization_time, queue_time, inference_time,)
+)]
+async fn predict_tokens(
+    infer: Extension<Infer>,
+    info: Extension<Info>,
+    Extension(context): Extension<Option<opentelemetry::Context>>,
+    Json(req): Json<PredictRequest>,
+) -> Result<(HeaderMap, Json<PredictTokensResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let response = PredictTokensResponse::Single(vec![]);
+
+    Ok((HeaderMap::new(), Json(response)))
+}
+
 /// Get Ranks. Returns a 424 status code if the model is not a Sequence Classification model with
 /// a single class.
 #[utoipa::path(
@@ -331,7 +367,7 @@ async fn rerank(
 
     match &info.model_type {
         ModelType::Reranker(_) => Ok(()),
-        ModelType::Classifier(_) | ModelType::Embedding(_) => {
+        ModelType::Classifier(_) | ModelType::Embedding(_) | ModelType::TokenClassifier(_) => {
             let counter = metrics::counter!("te_request_failure", "err" => "model_type");
             counter.increment(1);
             let message = "model is not a re-ranker model".to_string();
@@ -1558,6 +1594,13 @@ async fn vertex_compatibility(
         let result = predict(infer, info, context, Json(req)).await?;
         Ok(VertexPrediction::Predict(result.1 .0))
     };
+    let predict_tokens_future = move |infer: Extension<Infer>,
+                                      info: Extension<Info>,
+                                      context: Extension<Option<opentelemetry::Context>>,
+                                      req: PredictRequest| async move {
+        let result = predict_tokens(infer, info, context, Json(req)).await?;
+        Ok(VertexPrediction::PredictTokens(result.1 .0))
+    };
     let rerank_future = move |infer: Extension<Infer>,
                               info: Extension<Info>,
                               context: Extension<Option<opentelemetry::Context>>,
@@ -1584,6 +1627,13 @@ async fn vertex_compatibility(
                     .map_err(ErrorResponse::from)?;
                 futures
                     .push(predict_future(local_infer, local_info, local_context, instance).boxed());
+            }
+            ModelType::TokenClassifier(_) => {
+                let instance = serde_json::from_value::<PredictRequest>(instance)
+                    .map_err(ErrorResponse::from)?;
+                futures.push(
+                    predict_tokens_future(local_infer, local_info, local_context, instance).boxed(),
+                );
             }
             ModelType::Embedding(_) => {
                 if infer.is_splade() {
@@ -1765,6 +1815,7 @@ pub async fn run(
         .route("/embed_all", post(embed_all))
         .route("/embed_sparse", post(embed_sparse))
         .route("/predict", post(predict))
+        .route("/predict_tokens", post(predict_tokens))
         .route("/rerank", post(rerank))
         .route("/similarity", post(similarity))
         .route("/tokenize", post(tokenize))
@@ -1809,6 +1860,12 @@ pub async fn run(
                     .route("/", post(predict))
                     // AWS Sagemaker route
                     .route("/invocations", post(predict))
+            }
+            ModelType::TokenClassifier(_) => {
+                routes
+                    .route("/", post(predict_tokens))
+                    // AWS Sagemaker route
+                    .route("/invocations", post(predict_tokens))
             }
             ModelType::Reranker(_) => {
                 routes

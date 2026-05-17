@@ -1,5 +1,6 @@
 use crate::layers::{get_cublas_lt_wrapper, HiddenAct, LayerNorm, Linear};
 use crate::models::Model;
+use anyhow::bail;
 use candle::{DType, Device, IndexOp, Module, Result, Tensor, D};
 use candle_nn::{Embedding, VarBuilder};
 use serde::Deserialize;
@@ -365,6 +366,10 @@ pub trait ClassificationHead {
     fn forward(&self, hidden_states: &Tensor) -> Result<Tensor>;
 }
 
+pub trait TokenClassificationHead {
+    fn forward(&self, hidden_states: &Tensor) -> Result<Tensor>;
+}
+
 pub struct BertClassificationHead {
     pooler: Option<Linear>,
     output: Linear,
@@ -460,6 +465,38 @@ impl ClassificationHead for RobertaClassificationHead {
         let hidden_states = hidden_states.tanh()?;
         let hidden_states = self.output.forward(&hidden_states)?;
         let hidden_states = hidden_states.squeeze(1)?;
+        Ok(hidden_states)
+    }
+}
+
+pub struct BertTokenClassificationHead {
+    output: Linear,
+    span: tracing::Span,
+}
+
+impl BertTokenClassificationHead {
+    pub(crate) fn load(vb: VarBuilder, config: &BertConfig) -> Result<Self> {
+        let n_classes = match &config.id2label {
+            None => candle::bail!("`id2label` must be set for classifier models"),
+            Some(id2label) => id2label.len(),
+        };
+        let output_weight = vb
+            .pp("classifier")
+            .get((n_classes, config.hidden_size), "weight")?;
+        let output_bias = vb.pp("classifier").get(n_classes, "bias")?;
+        let output = Linear::new(output_weight, Some(output_bias), None);
+
+        Ok(Self {
+            output,
+            span: tracing::span!(tracing::Level::TRACE, "classifier"),
+        })
+    }
+}
+
+impl TokenClassificationHead for BertTokenClassificationHead {
+    fn forward(&self, hidden_states: &Tensor) -> Result<Tensor> {
+        let _enter = self.span.enter();
+        let hidden_states = self.output.forward(&hidden_states)?;
         Ok(hidden_states)
     }
 }
@@ -563,6 +600,7 @@ pub struct BertModel {
     encoder: BertEncoder,
     pool: Pool,
     classifier: Option<Box<dyn ClassificationHead + Send>>,
+    token_classifier: Option<Box<dyn TokenClassificationHead + Send>>,
     splade: Option<BertSpladeHead>,
 
     num_attention_heads: usize,
@@ -580,14 +618,14 @@ impl BertModel {
             candle::bail!("Bert only supports absolute position embeddings")
         }
 
-        let (pool, classifier, splade) = match model_type {
+        let (pool, classifier, token_classifier, splade) = match model_type {
             // Classifier models always use CLS pooling
             ModelType::Classifier => {
                 let pool = Pool::Cls;
 
                 let classifier: Box<dyn ClassificationHead + Send> =
                     Box::new(BertClassificationHead::load(vb.clone(), config)?);
-                (pool, Some(classifier), None)
+                (pool, Some(classifier), None, None)
             }
             ModelType::Embedding(pool) => {
                 let splade = if pool == Pool::Splade {
@@ -595,7 +633,14 @@ impl BertModel {
                 } else {
                     None
                 };
-                (pool, None, splade)
+                (pool, None, None, splade)
+            }
+            ModelType::TokenClassifier => {
+                // unused in token classification
+                let pool = Pool::Cls;
+                let token_classifier: Box<dyn TokenClassificationHead + Send> =
+                    Box::new(BertTokenClassificationHead::load(vb.clone(), config)?);
+                (pool, None, Some(token_classifier), None)
             }
         };
 
@@ -621,6 +666,7 @@ impl BertModel {
             encoder,
             pool,
             classifier,
+            token_classifier,
             splade,
             num_attention_heads: config.num_attention_heads,
             device: vb.device().clone(),
@@ -661,6 +707,9 @@ impl BertModel {
                 };
                 (pool, None, splade)
             }
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for RoBERTa yet")
+            }
         };
 
         let (embeddings, encoder) = match (
@@ -695,6 +744,7 @@ impl BertModel {
             encoder,
             pool,
             classifier,
+            token_classifier: None,
             splade,
             num_attention_heads: config.num_attention_heads,
             device: vb.device().clone(),
@@ -942,13 +992,17 @@ impl Model for BertModel {
     }
 
     fn predict(&self, batch: Batch) -> Result<Tensor> {
-        match &self.classifier {
-            None => candle::bail!("`predict` is not implemented for this model"),
-            Some(classifier) => {
-                let (pooled_embeddings, _raw_embeddings) = self.forward(batch)?;
-                let pooled_embeddings =
-                    pooled_embeddings.expect("pooled_embeddings is empty. This is a bug.");
-                classifier.forward(&pooled_embeddings)
+        if let Some(token_classifier) = &self.token_classifier {
+            candle::bail!("to implement")
+        } else {
+            match &self.classifier {
+                None => candle::bail!("`predict` is not implemented for this model"),
+                Some(classifier) => {
+                    let (pooled_embeddings, _raw_embeddings) = self.forward(batch)?;
+                    let pooled_embeddings =
+                        pooled_embeddings.expect("pooled_embeddings is empty. This is a bug.");
+                    classifier.forward(&pooled_embeddings)
+                }
             }
         }
     }

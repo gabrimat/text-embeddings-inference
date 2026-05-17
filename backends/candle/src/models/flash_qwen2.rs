@@ -263,6 +263,9 @@ impl FlashQwen2Model {
                 candle::bail!("`classifier` model type is not supported for Qwen2")
             }
             ModelType::Embedding(pool) => pool,
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for FlashQwen2 yet")
+            }
         };
 
         // Pushing the prefix for `model` is apparently only required if the model architecture is

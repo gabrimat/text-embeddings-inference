@@ -200,6 +200,9 @@ impl FlashDistilBertModel {
                 candle::bail!("`classifier` model type is not supported for DistilBert")
             }
             ModelType::Embedding(pool) => pool,
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for FlashDistilBert yet")
+            }
         };
 
         let (embeddings, encoder) = match (

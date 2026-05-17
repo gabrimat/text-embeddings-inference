@@ -94,6 +94,11 @@ impl OrtBackend {
                 }
                 _ => pool,
             },
+            ModelType::TokenClassifier => {
+                return Err(BackendError::Start(format!(
+                    "Token classification is not supported for `ort`, use `candle` instead."
+                )));
+            }
         };
 
         let onnx_path = {

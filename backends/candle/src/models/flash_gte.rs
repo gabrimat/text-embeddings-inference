@@ -193,6 +193,9 @@ impl FlashGTEModel {
                 (pool, Some(classifier))
             }
             ModelType::Embedding(pool) => (pool, None),
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for FlashGTE yet")
+            }
         };
 
         let (word_embeddings, token_type_embeddings, layers, embeddings_norm) =

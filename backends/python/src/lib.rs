@@ -27,6 +27,11 @@ impl PythonBackend {
         let pool = match model_type {
             ModelType::Classifier => Pool::Cls,
             ModelType::Embedding(pool) => pool,
+            ModelType::TokenClassifier => {
+                return Err(BackendError::Start(format!(
+                    "Token classification is not supported for the Python backend."
+                )));
+            }
         };
 
         let backend_process = management::BackendProcess::new(

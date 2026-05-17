@@ -259,6 +259,9 @@ impl FlashBertModel {
                 };
                 (pool, None, splade)
             }
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for FlashBert yet")
+            }
         };
 
         let (embeddings, encoder) = match (
@@ -325,6 +328,9 @@ impl FlashBertModel {
                     None
                 };
                 (pool, None, splade)
+            }
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for FlashBert yet")
             }
         };
 

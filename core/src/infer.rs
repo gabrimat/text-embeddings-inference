@@ -547,7 +547,8 @@ async fn batching_task(queue: Queue, notify: Arc<Notify>, embed_sender: mpsc::Se
 async fn backend_task(backend: Backend, mut embed_receiver: mpsc::Receiver<NextBatch>) {
     while let Some(batch) = embed_receiver.recv().await {
         match &backend.model_type {
-            ModelType::Classifier => {
+            // to double check if proper for token classifier
+            ModelType::Classifier | ModelType::TokenClassifier => {
                 let results = backend.predict(batch.1).await;
 
                 // Handle sending responses in a blocking task to avoid starving the backend

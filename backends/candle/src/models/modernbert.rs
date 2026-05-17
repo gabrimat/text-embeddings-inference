@@ -498,6 +498,9 @@ impl ModernBertModel {
 
                 (pool, None)
             }
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for ModernBert yet")
+            }
         };
 
         let embeddings = ModernBertEmbeddings::load(vb.pp("model.embeddings"), config)

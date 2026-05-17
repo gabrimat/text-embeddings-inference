@@ -20,6 +20,9 @@ impl Pplx1Model {
                     candle::bail!("Pplx1 only supports mean pooling, got {:?}", pool);
                 }
             }
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for Pplx1 yet")
+            }
         };
 
         // NOTE: Qwen3 but the `config` contains `use_bidirectional_attention=true`

@@ -252,6 +252,9 @@ impl FlashMistralModel {
                 candle::bail!("`classifier` model type is not supported for Mistral")
             }
             ModelType::Embedding(pool) => pool,
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for FlashMistral yet")
+            }
         };
 
         let embeddings = Embedding::new(

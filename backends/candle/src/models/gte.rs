@@ -409,6 +409,9 @@ impl GTEModel {
                 (pool, Some(classifier))
             }
             ModelType::Embedding(pool) => (pool, None),
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for GTE yet")
+            }
         };
 
         let (word_embeddings, token_type_embeddings, encoder, embeddings_norm) =

@@ -450,6 +450,9 @@ impl MPNetModel {
                 }
                 pool
             }
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for MPNet yet")
+            }
         };
 
         let (embeddings, encoder) = match (

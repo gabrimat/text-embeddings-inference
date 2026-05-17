@@ -267,6 +267,9 @@ impl FlashJinaBertModel {
                 }
                 (pool, None)
             }
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for FlashJinaBert yet")
+            }
         };
 
         let (embeddings, encoder) = match (

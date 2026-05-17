@@ -412,6 +412,9 @@ impl Qwen3Model {
                 candle::bail!("`classifier` model type is not supported for Qwen3")
             }
             ModelType::Embedding(pool) => pool,
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for Qwen3 yet")
+            }
         };
 
         // The Qwen3-Reranker models contain the `model` key

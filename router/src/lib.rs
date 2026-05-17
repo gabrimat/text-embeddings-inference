@@ -138,6 +138,16 @@ pub async fn run(
                 pooling: pool.to_string(),
             })
         }
+        text_embeddings_backend::ModelType::TokenClassifier => {
+            ModelType::TokenClassifier(ClassifierModel {
+                id2label: config
+                    .id2label
+                    .context("`config.json` does not contain `id2label`")?,
+                label2id: config
+                    .label2id
+                    .context("`config.json` does not contain `label2id`")?,
+            })
+        }
     };
 
     // Load tokenizer
@@ -409,6 +419,13 @@ fn get_backend_model_type(
             return Ok(text_embeddings_backend::ModelType::Embedding(
                 text_embeddings_backend::Pool::Splade,
             ));
+        } else if arch.ends_with("ForTokenClassification") {
+            if pooling.is_some() {
+                tracing::warn!(
+                    "`--pooling` arg is set but model is a token classifier. Ignoring `--pooling` arg."
+                );
+            }
+            return Ok(text_embeddings_backend::ModelType::TokenClassifier);
         } else if arch.ends_with("Classification") {
             if pooling.is_some() {
                 tracing::warn!(
@@ -523,6 +540,7 @@ pub enum ModelType {
     Classifier(ClassifierModel),
     Embedding(EmbeddingModel),
     Reranker(ClassifierModel),
+    TokenClassifier(ClassifierModel),
 }
 
 #[derive(Clone, Debug, Serialize)]

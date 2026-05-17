@@ -462,6 +462,9 @@ impl DistilBertModel {
 
                 (pool, None)
             }
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for DistilBert yet")
+            }
         };
 
         let (embeddings, encoder) = match (

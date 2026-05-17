@@ -314,6 +314,9 @@ impl FlashJinaCodeBertModel {
                 }
                 pool
             }
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for FlashJinaCode yet")
+            }
         };
 
         let (embeddings, encoder) = match (

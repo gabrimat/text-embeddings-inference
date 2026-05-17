@@ -228,6 +228,9 @@ impl FlashNomicBertModel {
                 }
                 pool
             }
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for FlashNomicBert yet")
+            }
         };
 
         let embeddings = NomicBertEmbeddings::load(vb.clone(), config)?;

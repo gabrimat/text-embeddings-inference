@@ -233,10 +233,24 @@ pub(crate) struct Prediction {
 }
 
 #[derive(Serialize, ToSchema)]
+pub(crate) struct TokenPrediction {
+    pub index: usize,
+    pub token: String,
+    pub prediction: Prediction,
+}
+
+#[derive(Serialize, ToSchema)]
 #[serde(untagged)]
 pub(crate) enum PredictResponse {
     Single(Vec<Prediction>),
     Batch(Vec<Vec<Prediction>>),
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(untagged)]
+pub(crate) enum PredictTokensResponse {
+    Single(Vec<TokenPrediction>),
+    Batch(Vec<Vec<TokenPrediction>>),
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -596,6 +610,7 @@ pub(crate) enum VertexPrediction {
     Embed(EmbedResponse),
     EmbedSparse(EmbedSparseResponse),
     Predict(PredictResponse),
+    PredictTokens(PredictTokensResponse),
     Rerank(RerankResponse),
 }
 

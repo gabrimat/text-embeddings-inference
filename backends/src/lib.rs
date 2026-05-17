@@ -183,6 +183,7 @@ impl Backend {
             match &self.model_type {
                 ModelType::Classifier => self.predict(batch).await.map(|_| ()),
                 ModelType::Embedding(_) => self.embed(batch).await.map(|_| ()),
+                ModelType::TokenClassifier => self.predict(batch).await.map(|_| ()),
             }?;
             tracing::info!("finish warmup for batch: {}, length: {}", shape.0, shape.1);
         }
@@ -243,6 +244,7 @@ impl Backend {
             match &self.model_type {
                 ModelType::Classifier => self.predict(batch).await.map(|_| ()),
                 ModelType::Embedding(_) => self.embed(batch).await.map(|_| ()),
+                ModelType::TokenClassifier => self.predict(batch).await.map(|_| ()),
             }?;
             tracing::info!(
                 "finish rocm warmup for batch: {}, length: {}",
@@ -372,6 +374,7 @@ impl Backend {
         match &self.model_type {
             ModelType::Classifier => self.predict(batch).await.map(|_| ()),
             ModelType::Embedding(_) => self.embed(batch).await.map(|_| ()),
+            ModelType::TokenClassifier => self.predict(batch).await.map(|_| ()),
         }
     }
 
@@ -405,6 +408,7 @@ impl Backend {
             match &self.model_type {
                 ModelType::Classifier => self.predict(batch).await.map(|_| ()),
                 ModelType::Embedding(_) => self.embed(batch).await.map(|_| ()),
+                ModelType::TokenClassifier => self.predict(batch).await.map(|_| ()),
             }
         }
     }

@@ -697,6 +697,9 @@ impl NomicBertModel {
                 }
                 pool
             }
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for NomicBert yet")
+            }
         };
 
         let embeddings = NomicBertEmbeddings::load(vb.clone(), config)?;

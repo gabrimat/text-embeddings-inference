@@ -364,6 +364,9 @@ impl JinaCodeBertModel {
                 }
                 pool
             }
+            ModelType::TokenClassifier => {
+                candle::bail!("Token classification is not supported for JinaCode yet")
+            }
         };
 
         let (embeddings, encoder) = match (
