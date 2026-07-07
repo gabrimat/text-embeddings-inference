@@ -4,7 +4,7 @@ use crate::common::{sort_embeddings, SnapshotEmbeddings, SnapshotScores};
 use anyhow::Result;
 use common::{batch, cosine_matcher, download_artifacts, load_tokenizer, relative_matcher};
 use text_embeddings_backend_candle::CandleBackend;
-use text_embeddings_backend_core::{Backend, ModelType, Pool};
+use text_embeddings_backend_core::{Backend, ModelType, Pool, Prediction};
 
 #[test]
 #[serial_test::serial]
@@ -215,6 +215,39 @@ fn test_bert_classification() -> Result<()> {
 
     let matcher = relative_matcher();
     insta::assert_yaml_snapshot!("bert_classification_single", predictions_single, &matcher);
+
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial]
+fn test_bert_token_classification() -> Result<()> {
+    let (model_root, _) = download_artifacts("Babelscape/wikineural-multilingual-ner", None, None)?;
+    let tokenizer = load_tokenizer(&model_root)?;
+
+    let backend = CandleBackend::new(
+        &model_root,
+        "float32".to_string(),
+        ModelType::TokenClassifier,
+        None,
+    )?;
+
+    let input_single = batch(
+        vec![tokenizer
+            .encode("My name is Wolfgang and I live in Berlin", true)
+            .unwrap()],
+        vec![],
+        [0].to_vec(),
+    );
+
+    let mut predictions = backend.predict(input_single)?;
+    let Prediction::Tokens(scores) = predictions.remove(&0).unwrap() else {
+        panic!("expected token predictions")
+    };
+    let predictions_single = SnapshotScores::from(scores);
+
+    let matcher = relative_matcher();
+    insta::assert_yaml_snapshot!("bert_token_classification_single", predictions_single, &matcher);
 
     Ok(())
 }

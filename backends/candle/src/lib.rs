@@ -710,6 +710,14 @@ impl Backend for CandleBackend {
 
     fn predict(&self, batch: Batch) -> Result<Predictions, BackendError> {
         let batch_size = batch.len();
+        let raw_indices = batch.raw_indices.clone();
+
+        // Used for indexing in the raw results
+        let input_lengths: Vec<usize> = (0..batch.len())
+            .map(|i| {
+                (batch.cumulative_seq_lengths[i + 1] - batch.cumulative_seq_lengths[i]) as usize
+            })
+            .collect();
 
         let results = self.model.predict(batch).e()?;
 
@@ -717,8 +725,21 @@ impl Backend for CandleBackend {
 
         let mut predictions =
             HashMap::with_capacity_and_hasher(batch_size, BuildNoHashHasher::default());
-        for (i, r) in results.into_iter().enumerate() {
-            predictions.insert(i, Prediction::Sequence(r));
+        if raw_indices.is_empty() {
+            // Sequence classification: one row of class scores per sequence
+            for (i, r) in results.into_iter().enumerate() {
+                predictions.insert(i, Prediction::Sequence(r));
+            }
+        } else {
+            // Token classification: rows are the concatenated per-token class scores,
+            // sliced per sequence like the raw embeddings in `embed`
+            let mut cumulative_length = 0;
+            for i in raw_indices.into_iter() {
+                let length = input_lengths[i as usize];
+                let t = results[cumulative_length..cumulative_length + length].to_vec();
+                predictions.insert(i as usize, Prediction::Tokens(t));
+                cumulative_length += length;
+            }
         }
 
         Ok(predictions)

@@ -255,6 +255,15 @@ impl Backend {
         Ok(())
     }
 
+    /// Token classification consumes the raw (per-token) hidden states,
+    /// every other model type the pooled ones
+    fn batch_indices(&self, indices: Vec<u32>) -> (Vec<u32>, Vec<u32>) {
+        match self.model_type {
+            ModelType::TokenClassifier => (Vec::new(), indices),
+            _ => (indices, Vec::new()),
+        }
+    }
+
     #[instrument(skip_all)]
     pub fn create_warmup_batch(
         &self,
@@ -273,7 +282,7 @@ impl Backend {
         let mut batched_token_type_ids = Vec::new();
         let mut batched_position_ids = Vec::new();
         let mut cumulative_seq_lengths = Vec::with_capacity(batch_size as usize + 1);
-        let mut pooled_indices = Vec::with_capacity(batch_size as usize);
+        let mut indices = Vec::with_capacity(batch_size as usize);
         cumulative_seq_lengths.push(0);
         let input_ids: Vec<u32> = (0..tmp_length)
             .map(|_| rand::rng().random_range(0..max_token))
@@ -287,8 +296,9 @@ impl Backend {
             batched_position_ids.extend(position_ids.iter().cloned());
             current_length += input_ids.len();
             cumulative_seq_lengths.push(current_length as u32);
-            pooled_indices.push(batch_id);
+            indices.push(batch_id);
         }
+        let (pooled_indices, raw_indices) = self.batch_indices(indices);
         Batch {
             input_ids: batched_input_ids,
             token_type_ids: batched_token_type_ids,
@@ -296,7 +306,7 @@ impl Backend {
             cumulative_seq_lengths,
             max_length: tmp_length,
             pooled_indices,
-            raw_indices: vec![],
+            raw_indices,
         }
     }
 
@@ -333,7 +343,7 @@ impl Backend {
         let mut position_ids = Vec::with_capacity(warmup_tokens);
 
         let mut cumulative_seq_lengths = vec![0];
-        let mut pooled_indices = Vec::new();
+        let mut indices = Vec::new();
 
         let mut i = 0_u32;
         let mut remaining = warmup_tokens;
@@ -350,7 +360,7 @@ impl Backend {
             position_ids.extend((0..request_length as u32).collect::<Vec<u32>>());
 
             cumulative_seq_lengths.push(cumulative_length as u32);
-            pooled_indices.push(i);
+            indices.push(i);
 
             i += 1;
             remaining = remaining.saturating_sub(max_input_length);
@@ -361,6 +371,7 @@ impl Backend {
             }
         }
 
+        let (pooled_indices, raw_indices) = self.batch_indices(indices);
         let batch = Batch {
             input_ids,
             token_type_ids,
@@ -368,7 +379,7 @@ impl Backend {
             cumulative_seq_lengths,
             max_length,
             pooled_indices,
-            raw_indices: vec![],
+            raw_indices,
         };
 
         match &self.model_type {
@@ -396,14 +407,15 @@ impl Backend {
             // The backend is un-healthy or only just started. Do a more advanced health check
             // by calling the model forward on a test batch
 
+            let (pooled_indices, raw_indices) = self.batch_indices(vec![0]);
             let batch = Batch {
                 input_ids: vec![0],
                 token_type_ids: vec![0],
                 position_ids: vec![0],
                 cumulative_seq_lengths: vec![0, 1],
                 max_length: 1,
-                pooled_indices: vec![0],
-                raw_indices: vec![],
+                pooled_indices,
+                raw_indices,
             };
             match &self.model_type {
                 ModelType::Classifier => self.predict(batch).await.map(|_| ()),

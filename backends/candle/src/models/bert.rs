@@ -1,6 +1,5 @@
 use crate::layers::{get_cublas_lt_wrapper, HiddenAct, LayerNorm, Linear};
 use crate::models::Model;
-use anyhow::bail;
 use candle::{DType, Device, IndexOp, Module, Result, Tensor, D};
 use candle_nn::{Embedding, VarBuilder};
 use serde::Deserialize;
@@ -993,7 +992,9 @@ impl Model for BertModel {
 
     fn predict(&self, batch: Batch) -> Result<Tensor> {
         if let Some(token_classifier) = &self.token_classifier {
-            candle::bail!("to implement")
+            let (_pooled_embeddings, raw_embeddings) = self.forward(batch)?;
+            let raw_embeddings = raw_embeddings.expect("raw_embeddings is empty. This is a bug.");
+            token_classifier.forward(&raw_embeddings)
         } else {
             match &self.classifier {
                 None => candle::bail!("`predict` is not implemented for this model"),
