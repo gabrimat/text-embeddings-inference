@@ -179,12 +179,7 @@ fn test_flash_emotions() -> Result<()> {
 
     let matcher = relative_matcher();
 
-    let predictions: Vec<Vec<f32>> = backend
-        .predict(input_batch)?
-        .into_iter()
-        .map(|(_, v)| v)
-        .collect();
-    let predictions_batch = SnapshotScores::from(predictions);
+    let predictions_batch = SnapshotScores::from(backend.predict(input_batch)?);
     insta::assert_yaml_snapshot!("emotions_batch", predictions_batch, &matcher);
 
     let input_single = batch(
@@ -193,12 +188,7 @@ fn test_flash_emotions() -> Result<()> {
         vec![],
     );
 
-    let predictions: Vec<Vec<f32>> = backend
-        .predict(input_single)?
-        .into_iter()
-        .map(|(_, v)| v)
-        .collect();
-    let predictions_single = SnapshotScores::from(predictions);
+    let predictions_single = SnapshotScores::from(backend.predict(input_single)?);
 
     insta::assert_yaml_snapshot!("emotions_single", predictions_single, &matcher);
     assert_eq!(predictions_batch[0], predictions_single[0]);
@@ -239,12 +229,7 @@ fn test_flash_bert_classification() -> Result<()> {
         vec![],
     );
 
-    let predictions: Vec<Vec<f32>> = backend
-        .predict(input_single)?
-        .into_iter()
-        .map(|(_, v)| v)
-        .collect();
-    let predictions_single = SnapshotScores::from(predictions);
+    let predictions_single = SnapshotScores::from(backend.predict(input_single)?);
 
     let matcher = relative_matcher();
     insta::assert_yaml_snapshot!("bert_classification_single", predictions_single, &matcher);

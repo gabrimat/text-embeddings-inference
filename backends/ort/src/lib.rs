@@ -10,7 +10,7 @@ use ort::session::{builder::GraphOptimizationLevel, Session, SessionInputValue};
 use serde::Deserialize;
 
 use text_embeddings_backend_core::{
-    Backend, BackendError, Batch, Embedding, Embeddings, ModelType, Pool, Predictions,
+    Backend, BackendError, Batch, Embedding, Embeddings, ModelType, Pool, Prediction, Predictions,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -719,7 +719,7 @@ impl Backend for OrtBackend {
         let mut predictions =
             HashMap::with_capacity_and_hasher(batch_size, BuildNoHashHasher::default());
         for (i, r) in outputs.rows().into_iter().enumerate() {
-            predictions.insert(i, r.to_vec());
+            predictions.insert(i, Prediction::Sequence(r.to_vec()));
         }
 
         Ok(predictions)

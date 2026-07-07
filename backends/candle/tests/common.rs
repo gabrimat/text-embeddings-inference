@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::max;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use text_embeddings_backend_core::{Batch, Embedding, Embeddings};
+use text_embeddings_backend_core::{Batch, Embedding, Embeddings, Prediction, Predictions};
 use tokenizers::pre_tokenizers::metaspace::PrependScheme;
 use tokenizers::pre_tokenizers::sequence::Sequence;
 use tokenizers::{Encoding, PreTokenizerWrapper, Tokenizer};
@@ -46,6 +46,22 @@ impl From<Vec<Vec<f32>>> for SnapshotScores {
             value
                 .into_iter()
                 .map(|v| v.into_iter().map(Score).collect())
+                .collect(),
+        )
+    }
+}
+
+impl From<Predictions> for SnapshotScores {
+    fn from(value: Predictions) -> Self {
+        let mut entries: Vec<_> = value.into_iter().collect();
+        entries.sort_by_key(|(i, _)| *i);
+        Self(
+            entries
+                .into_iter()
+                .map(|(_, p)| match p {
+                    Prediction::Sequence(s) => s.into_iter().map(Score).collect(),
+                    Prediction::Tokens(_) => panic!("expected sequence predictions"),
+                })
                 .collect(),
         )
     }

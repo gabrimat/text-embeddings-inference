@@ -194,8 +194,7 @@ fn test_modernbert_classification() -> Result<()> {
         vec![],
     );
 
-    let predictions: Vec<Vec<f32>> = backend.predict(input_single)?.into_values().collect();
-    let predictions_single = SnapshotScores::from(predictions);
+    let predictions_single = SnapshotScores::from(backend.predict(input_single)?);
 
     let matcher = relative_matcher();
     insta::assert_yaml_snapshot!(
@@ -229,8 +228,7 @@ fn test_modernbert_classification_mean_pooling() -> Result<()> {
         vec![],
     );
 
-    let predictions: Vec<Vec<f32>> = backend.predict(input_single)?.into_values().collect();
-    let predictions_single = SnapshotScores::from(predictions);
+    let predictions_single = SnapshotScores::from(backend.predict(input_single)?);
 
     let matcher = relative_matcher();
     insta::assert_yaml_snapshot!(

@@ -3,7 +3,7 @@ use crate::tokenization::{EncodingInput, RawEncoding, Tokenization};
 use crate::TextEmbeddingsError;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use text_embeddings_backend::{Backend, BackendError, Embedding, ModelType};
+use text_embeddings_backend::{Backend, BackendError, Embedding, ModelType, Prediction};
 use tokenizers::TruncationDirection;
 use tokio::sync::{mpsc, oneshot, watch, Notify, OwnedSemaphorePermit, Semaphore};
 use tracing::instrument;
@@ -547,7 +547,6 @@ async fn batching_task(queue: Queue, notify: Arc<Notify>, embed_sender: mpsc::Se
 async fn backend_task(backend: Backend, mut embed_receiver: mpsc::Receiver<NextBatch>) {
     while let Some(batch) = embed_receiver.recv().await {
         match &backend.model_type {
-            // to double check if proper for token classifier
             ModelType::Classifier | ModelType::TokenClassifier => {
                 let results = backend.predict(batch.1).await;
 
@@ -562,14 +561,25 @@ async fn backend_task(backend: Backend, mut embed_receiver: mpsc::Receiver<NextB
                                 inference: inference_duration,
                             };
 
-                            let _ = m.response_tx.send(Ok(InferResult::Classification(
-                                ClassificationInferResponse {
-                                    results: predictions.remove(&i).expect(
-                                        "prediction not found in results. This is a backend bug.",
-                                    ),
-                                    metadata: infer_metadata,
-                                },
-                            )));
+                            let results = match predictions
+                                .remove(&i)
+                                .expect("prediction not found in results. This is a backend bug.")
+                            {
+                                Prediction::Sequence(s) => {
+                                    InferResult::Classification(ClassificationInferResponse {
+                                        results: s,
+                                        metadata: infer_metadata,
+                                    })
+                                }
+                                Prediction::Tokens(t) => InferResult::TokenClassification(
+                                    TokenClassificationInferResponse {
+                                        results: t,
+                                        metadata: infer_metadata,
+                                    },
+                                ),
+                            };
+
+                            let _ = m.response_tx.send(Ok(results));
                         });
                     }
                     Err(err) => {
@@ -636,6 +646,7 @@ pub struct InferMetadata {
 #[derive(Debug)]
 pub(crate) enum InferResult {
     Classification(ClassificationInferResponse),
+    TokenClassification(TokenClassificationInferResponse),
     PooledEmbedding(PooledEmbeddingsInferResponse),
     AllEmbedding(AllEmbeddingsInferResponse),
 }
@@ -643,6 +654,12 @@ pub(crate) enum InferResult {
 #[derive(Debug)]
 pub struct ClassificationInferResponse {
     pub results: Vec<f32>,
+    pub metadata: InferMetadata,
+}
+
+#[derive(Debug)]
+pub struct TokenClassificationInferResponse {
+    pub results: Vec<Vec<f32>>,
     pub metadata: InferMetadata,
 }
 

@@ -32,7 +32,13 @@ pub enum Embedding {
 }
 
 pub type Embeddings = IntMap<usize, Embedding>;
-pub type Predictions = IntMap<usize, Vec<f32>>;
+
+pub enum Prediction {
+    Sequence(Vec<f32>),
+    Tokens(Vec<Vec<f32>>),
+}
+
+pub type Predictions = IntMap<usize, Prediction>;
 
 pub trait Backend {
     fn health(&self) -> Result<(), BackendError>;

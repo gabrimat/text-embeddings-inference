@@ -5,7 +5,7 @@ use backend_grpc_client::Client;
 use nohash_hasher::BuildNoHashHasher;
 use std::collections::HashMap;
 use text_embeddings_backend_core::{
-    Backend, BackendError, Batch, Embedding, Embeddings, ModelType, Pool, Predictions,
+    Backend, BackendError, Batch, Embedding, Embeddings, ModelType, Pool, Prediction, Predictions,
 };
 use tokio::runtime::Runtime;
 
@@ -129,7 +129,7 @@ impl Backend for PythonBackend {
             HashMap::with_capacity_and_hasher(batch_size, BuildNoHashHasher::default());
 
         for (i, r) in raw_results.into_iter().enumerate() {
-            predictions.insert(i, r);
+            predictions.insert(i, Prediction::Sequence(r));
         }
 
         Ok(predictions)

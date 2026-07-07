@@ -565,6 +565,8 @@ impl grpc::info_server::Info for TextEmbeddingsService {
             ModelType::Classifier(_) => grpc::ModelType::Classifier,
             ModelType::Embedding(_) => grpc::ModelType::Embedding,
             ModelType::Reranker(_) => grpc::ModelType::Reranker,
+            // Token classification models are rejected when the gRPC server starts
+            ModelType::TokenClassifier(_) => unreachable!(),
         };
 
         Ok(Response::new(InfoResponse {
@@ -900,7 +902,7 @@ impl grpc::rerank_server::Rerank for TextEmbeddingsService {
         }
 
         match &self.info.model_type {
-            ModelType::Classifier(_) => {
+            ModelType::Classifier(_) | ModelType::TokenClassifier(_) => {
                 let counter = metrics::counter!("te_request_failure", "err" => "model_type");
                 counter.increment(1);
                 let message = "model is not a re-ranker model".to_string();
@@ -1078,7 +1080,7 @@ impl grpc::rerank_server::Rerank for TextEmbeddingsService {
 
         // Check model type
         match &self.info.model_type {
-            ModelType::Classifier(_) => {
+            ModelType::Classifier(_) | ModelType::TokenClassifier(_) => {
                 let counter = metrics::counter!("te_request_failure", "err" => "model_type");
                 counter.increment(1);
                 let message = "model is not a re-ranker model".to_string();
@@ -1374,6 +1376,10 @@ pub async fn run(
     prom_builder: PrometheusBuilder,
     api_key: Option<String>,
 ) -> Result<(), anyhow::Error> {
+    if matches!(info.model_type, ModelType::TokenClassifier(_)) {
+        anyhow::bail!("Token classification models are not supported on the gRPC server yet");
+    }
+
     prom_builder.install()?;
     tracing::info!("Serving Prometheus metrics: 0.0.0.0:9000");
 
@@ -1433,6 +1439,8 @@ pub async fn run(
                         )
                         .await
                 }
+                // Token classification models are rejected when the gRPC server starts
+                ModelType::TokenClassifier(_) => unreachable!(),
                 ModelType::Embedding(_) => {
                     health_reporter
                         .set_service_status(

@@ -25,9 +25,7 @@ fn test_debertav2_rerank() -> Result<()> {
         vec![],
     );
 
-    let predictions: Vec<Vec<f32>> = backend.predict(input_single)?.into_values().collect();
-
-    let predictions = SnapshotScores::from(predictions);
+    let predictions = SnapshotScores::from(backend.predict(input_single)?);
     insta::assert_yaml_snapshot!(
         "debertav2_reranker_single",
         predictions,
