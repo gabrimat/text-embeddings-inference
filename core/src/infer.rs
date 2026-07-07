@@ -331,7 +331,7 @@ impl Infer {
         start_time: &Instant,
         _permit: OwnedSemaphorePermit,
     ) -> Result<InferResult, TextEmbeddingsError> {
-        if self.is_classifier() {
+        if self.is_classifier() || self.is_token_classifier() {
             let counter = metrics::counter!("te_request_failure", "err" => "model_type");
             counter.increment(1);
             let message = "Model is not an embedding model".to_string();
@@ -456,27 +456,7 @@ impl Infer {
         };
 
         if !raw_scores {
-            // Softmax
-            if response.results.len() > 1 {
-                let max = *response
-                    .results
-                    .iter()
-                    .max_by(|x, y| x.abs().partial_cmp(&y.abs()).unwrap())
-                    .unwrap();
-
-                let mut den = 0.0;
-                for v in response.results.iter_mut() {
-                    *v = (*v - max).exp();
-                    den += *v;
-                }
-                for v in response.results.iter_mut() {
-                    *v /= den;
-                }
-            }
-            // Sigmoid
-            else {
-                response.results[0] = 1.0 / (1.0 + (-response.results[0]).exp());
-            }
+            normalize_scores(&mut response.results);
         }
 
         // Timings
@@ -497,9 +477,107 @@ impl Infer {
         Ok(response)
     }
 
+    #[instrument(skip(self, inputs, _permit))]
+    pub async fn predict_tokens<I: Into<EncodingInput> + std::fmt::Debug>(
+        &self,
+        inputs: I,
+        truncate: bool,
+        truncation_direction: TruncationDirection,
+        raw_scores: bool,
+        _permit: OwnedSemaphorePermit,
+    ) -> Result<TokenClassificationInferResponse, TextEmbeddingsError> {
+        if !self.is_token_classifier() {
+            let counter = metrics::counter!("te_request_failure", "err" => "model_type");
+            counter.increment(1);
+            let message = "Model is not a token classifier model".to_string();
+            return Err(TextEmbeddingsError::Backend(BackendError::Inference(
+                message,
+            )));
+        }
+
+        let start_time = Instant::now();
+        let counter = metrics::counter!("te_predict_tokens_count");
+        counter.increment(1);
+
+        // Tokenization
+        let encoding = self
+            .tokenization
+            .encode(inputs.into(), truncate, truncation_direction, None)
+            .await
+            .map_err(|err| {
+                let counter = metrics::counter!("te_request_failure", "err" => "tokenization");
+                counter.increment(1);
+                tracing::error!("{err}");
+                err
+            })?;
+
+        // MPSC channel to communicate with the background batching task
+        let (response_tx, response_rx) = oneshot::channel();
+
+        // Append the request to the queue
+        // `pooling: false` so the entry lands in the batch's `raw_indices`:
+        // token classification needs the per-token hidden states, not pooled ones
+        self.queue.append(Entry {
+            metadata: Metadata {
+                response_tx,
+                tokenization: start_time.elapsed(),
+                queue_time: Instant::now(),
+                prompt_tokens: encoding.input_ids.len(),
+                pooling: false,
+            },
+            encoding,
+        });
+
+        self.notify_batching_task.notify_one();
+
+        let response = response_rx
+            .await
+            .expect(
+                "Infer batching task dropped the sender without sending a response. This is a bug.",
+            )
+            .map_err(|err| {
+                let counter = metrics::counter!("te_request_failure", "err" => "inference");
+                counter.increment(1);
+                tracing::error!("{err}");
+                err
+            })?;
+
+        let InferResult::TokenClassification(mut response) = response else {
+            panic!("unexpected enum variant")
+        };
+
+        if !raw_scores {
+            for scores in response.results.iter_mut() {
+                normalize_scores(scores);
+            }
+        }
+
+        // Timings
+        let total_time = start_time.elapsed();
+
+        // Metrics
+        let counter = metrics::counter!("te_predict_tokens_success");
+        counter.increment(1);
+        let histogram = metrics::histogram!("te_predict_tokens_duration");
+        histogram.record(total_time.as_secs_f64());
+        let histogram = metrics::histogram!("te_predict_tokens_tokenization_duration");
+        histogram.record(response.metadata.tokenization.as_secs_f64());
+        let histogram = metrics::histogram!("te_predict_tokens_queue_duration");
+        histogram.record(response.metadata.queue.as_secs_f64());
+        let histogram = metrics::histogram!("te_predict_tokens_inference_duration");
+        histogram.record(response.metadata.inference.as_secs_f64());
+
+        Ok(response)
+    }
+
     #[instrument(skip(self))]
     pub fn is_classifier(&self) -> bool {
         matches!(self.backend.model_type, ModelType::Classifier)
+    }
+
+    #[instrument(skip(self))]
+    pub fn is_token_classifier(&self) -> bool {
+        matches!(self.backend.model_type, ModelType::TokenClassifier)
     }
 
     #[instrument(skip(self))]
@@ -522,6 +600,30 @@ impl Infer {
 }
 
 #[instrument(skip_all)]
+/// Softmax over one score vector in place, or sigmoid when there is a single class
+fn normalize_scores(scores: &mut [f32]) {
+    // Softmax
+    if scores.len() > 1 {
+        let max = *scores
+            .iter()
+            .max_by(|x, y| x.abs().partial_cmp(&y.abs()).unwrap())
+            .unwrap();
+
+        let mut den = 0.0;
+        for v in scores.iter_mut() {
+            *v = (*v - max).exp();
+            den += *v;
+        }
+        for v in scores.iter_mut() {
+            *v /= den;
+        }
+    }
+    // Sigmoid
+    else {
+        scores[0] = 1.0 / (1.0 + (-scores[0]).exp());
+    }
+}
+
 async fn batching_task(queue: Queue, notify: Arc<Notify>, embed_sender: mpsc::Sender<NextBatch>) {
     loop {
         notify.notified().await;
